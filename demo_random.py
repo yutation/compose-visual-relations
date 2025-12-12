@@ -60,14 +60,29 @@ def inference(model, batch_size, num_rels, im_size, step_lr, num_steps):
     
     print(f"Running inference with {num_steps} steps...")
     for i in range(num_steps):
-        im_noise.normal_()
+        #Note: Step3
+        with xp.Trace('step3'):
+            im_noise.normal_()
+        torch_xla.sync()
         im = im + 0.001 * im_noise
         im.requires_grad_(requires_grad=True)
         
-        energy = sum([model.forward(im, y) for y in labels])
-        im_grad = torch.autograd.grad([energy.sum()], [im])[0]
+        #Note: Step1
+        with xp.Trace('step1'):
+            energy = sum([model.forward(im, y) for y in labels])
+        torch_xla.sync()
         
-        im = im - step_lr * im_grad
+        #Note: Step2
+        with xp.Trace('step2'):
+            im_grad = torch.autograd.grad([energy.sum()], [im])[0]
+        torch_xla.sync()
+        
+        #Note: Step4
+        with xp.Trace('step4'):
+            im = im - step_lr * im_grad
+        torch_xla.sync()
+
+        
         im = im.detach()
         im = torch.clamp(im, 0, 1)
         
@@ -83,9 +98,9 @@ def inference(model, batch_size, num_rels, im_size, step_lr, num_steps):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Simple random inference for EBM')
-    parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
+    parser.add_argument('--batch_size', type=int, default=16, help='Batch size')
     parser.add_argument('--num_rels', type=int, default=1, help='Number of relations')
-    parser.add_argument('--num_steps', type=int, default=20, help='Number of sampling steps')
+    parser.add_argument('--num_steps', type=int, default=3, help='Number of sampling steps')
     args = parser.parse_args()
     
     # Device (TPU)
